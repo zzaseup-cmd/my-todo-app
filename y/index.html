@@ -366,6 +366,47 @@
             .card-list { display: none; }
             .today-cards { display: none; }
         }
+
+        /* ── Pinned / Notice section ── */
+        #pinnedSectionWrap:not(:empty) {
+            position: sticky;
+            top: 54px; /* below sticky header */
+            z-index: 50;
+            background: #f0f2f5;
+            padding-bottom: 8px;
+            margin-bottom: 4px;
+        }
+        .pinned-section {
+            border-radius: 10px;
+            border: 2px solid #f59e0b;
+            box-shadow: 0 2px 8px rgba(245,158,11,0.22);
+            overflow: hidden;
+        }
+        .pinned-tw { overflow-x: auto; background: #FFFBEA; }
+        .pinned-tw table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .pinned-tw thead th {
+            background: #f59e0b; color: white;
+            padding: 8px 10px; text-align: left; white-space: nowrap; font-weight: 600;
+        }
+        .pinned-tw thead th:first-child { text-align: center; }
+        .pinned-tw tbody tr { border-bottom: 1px solid #fde68a; }
+        .pinned-tw tbody tr:hover { background: #fef3c7; }
+        .pinned-tw td { padding: 8px 10px; vertical-align: middle; }
+        .pinned-tw td:first-child { text-align: center; }
+
+        .pinned-cards { padding: 12px; background: #FFFBEA; }
+
+        .btn-pin {
+            background: none; border: none; cursor: pointer;
+            font-size: 16px; padding: 0 3px; line-height: 1;
+            opacity: 0.25; transition: opacity 0.15s, transform 0.15s;
+            vertical-align: middle;
+        }
+        .btn-pin:hover { opacity: 0.65; transform: scale(1.2); }
+        .btn-pin.pinned { opacity: 1; }
+
+        @media (min-width: 769px) { .pinned-cards { display: none; } }
+        @media (max-width: 768px) { .pinned-tw { display: none; } }
     </style>
 </head>
 <body>
@@ -400,6 +441,9 @@
         </div>
         <div id="todaySection"></div>
     </div>
+
+    <!-- Pinned / Notice -->
+    <div id="pinnedSectionWrap"></div>
 
     <!-- Main list -->
     <div class="section-title" style="margin-top:4px">
@@ -583,6 +627,9 @@ let initialized = false;
 
 // 'hide_done' = 기본(완료 숨김) | '전체' | '대기중' | '진행중' | '완료' | '보류' | '긴급'
 let activeSummaryFilter = 'hide_done';
+
+// ─── Pinned IDs (localStorage) ────────────────────────────
+let pinnedIds = new Set(JSON.parse(localStorage.getItem('pinned_tasks') || '[]'));
 
 // ─── Priority weights for sorting ────────────────────────
 const PRIORITY_WEIGHT = { '아주높음': 4, '높음': 3, '보통': 2, '낮음': 1 };
@@ -830,6 +877,7 @@ function taskCardHTML(t) {
             <input type="checkbox" ${t.done?'checked':''} onchange="toggleDone('${t.id}')">
             <div class="card-title ${t.done?'done-text':''}">${esc(t.task)}</div>
             <div class="card-badges">
+                <button class="btn-pin ${pinnedIds.has(t.id)?'pinned':''}" onclick="togglePin('${t.id}')" title="${pinnedIds.has(t.id)?'고정 해제':'공지사항에 고정'}">📌</button>
                 <span class="badge p-${t.priority}">${t.priority}</span>
                 <span class="badge s-${t.status}">${t.status}</span>
             </div>
@@ -861,6 +909,104 @@ function todayCardHTML(t) {
         <div class="card-actions">
             <button class="btn btn-secondary" onclick="openModal('${t.id}')">✏️ 수정</button>
             <button class="btn btn-danger" onclick="deleteTask('${t.id}')">🗑 삭제</button>
+        </div>
+    </div>`;
+}
+
+// ─── Pin toggle ──────────────────────────────────────────
+function togglePin(id) {
+    if (pinnedIds.has(id)) pinnedIds.delete(id);
+    else pinnedIds.add(id);
+    localStorage.setItem('pinned_tasks', JSON.stringify([...pinnedIds]));
+    renderTable();
+}
+
+// ─── Pinned card (mobile) ─────────────────────────────────
+function pinnedCardHTML(t) {
+    const isOv=isOverdue(t.deadline), isTd=isToday(t.deadline), isSn=isDueSoon(t.deadline);
+    const cardCls = t.done ? 'card-done' : isOv ? 'card-overdue' : isTd ? 'card-today' : isSn ? 'card-soon' : '';
+    const dlCls   = !t.done&&isOv ? 'dl-overdue' : !t.done&&isTd ? 'dl-today' : !t.done&&isSn ? 'dl-soon' : 'card-val';
+    const fields  = [
+        t.deadline ? `<div class="card-field"><span class="card-lbl">기한</span><span class="${dlCls}">${fmtDeadlineText(t.deadline)}</span></div>` : '',
+        t.category ? `<div class="card-field"><span class="card-lbl">구분</span><span class="card-val">${esc(t.category)}</span></div>` : '',
+        t.assignee ? `<div class="card-field"><span class="card-lbl">담당자</span><span class="card-val">${esc(t.assignee)}</span></div>` : '',
+        t.location ? `<div class="card-field"><span class="card-lbl">장소</span><span class="card-val">${esc(t.location)}</span></div>` : '',
+        t.detail   ? `<div class="card-field"><span class="card-lbl">세부</span><span class="card-val">${esc(t.detail)}</span></div>` : '',
+        t.note     ? `<div class="card-field"><span class="card-lbl">비고</span><span class="card-val">${esc(t.note)}</span></div>` : '',
+    ].filter(Boolean).join('');
+    return `<div class="task-card ${cardCls}" style="border-color:#f59e0b">
+        <div class="card-head">
+            <input type="checkbox" ${t.done?'checked':''} onchange="toggleDone('${t.id}')">
+            <div class="card-title ${t.done?'done-text':''}">${esc(t.task)}</div>
+            <div class="card-badges">
+                <button class="btn-pin pinned" onclick="togglePin('${t.id}')" title="고정 해제">📌</button>
+                <span class="badge p-${t.priority}">${t.priority}</span>
+                <span class="badge s-${t.status}">${t.status}</span>
+            </div>
+        </div>
+        ${fields ? `<div class="card-fields">${fields}</div>` : ''}
+        <div class="card-actions" style="background:#fef9c3">
+            <button class="btn btn-secondary" onclick="openModal('${t.id}')">✏️ 수정</button>
+            <button class="btn btn-danger" onclick="deleteTask('${t.id}')">🗑 삭제</button>
+        </div>
+    </div>`;
+}
+
+// ─── Pinned / Notice section ──────────────────────────────
+function renderPinnedSection() {
+    const wrap   = document.getElementById('pinnedSectionWrap');
+    const pinned = tasks.filter(t => pinnedIds.has(t.id));
+    if (!pinned.length) { wrap.innerHTML = ''; return; }
+
+    const tableRows = pinned.map(t => {
+        const rowCls = t.done ? 'row-done' : isOverdue(t.deadline) ? 'row-overdue' : isDueSoon(t.deadline) ? 'row-soon' : '';
+        const dlCls  = !t.done&&isOverdue(t.deadline) ? 'dl-overdue' : !t.done&&isToday(t.deadline) ? 'dl-today' : !t.done&&isDueSoon(t.deadline) ? 'dl-soon' : '';
+        return `<tr class="${rowCls}">
+            <td><input type="checkbox" ${t.done?'checked':''} onchange="toggleDone('${t.id}')"></td>
+            <td>${t.date||'-'}</td>
+            <td><span class="${dlCls}">${fmtDeadline(t.deadline)}</span></td>
+            <td>${esc(t.category)||'-'}</td>
+            <td><strong>${esc(t.task)}</strong></td>
+            <td>${esc(t.assignee)||'-'}</td>
+            <td><span class="badge p-${t.priority}">${t.priority}</span></td>
+            <td><span class="badge s-${t.status}">${t.status}</span></td>
+            <td><span class="truncate" title="${esc(t.location)}">${esc(t.location)||'-'}</span></td>
+            <td><span class="truncate" title="${esc(t.detail)}">${esc(t.detail)||'-'}</span></td>
+            <td><span class="truncate" title="${esc(t.note)}">${esc(t.note)||'-'}</span></td>
+            <td style="white-space:nowrap">
+                <button class="btn-pin pinned" onclick="togglePin('${t.id}')" title="고정 해제">📌</button>
+                <button class="btn btn-secondary btn-sm" onclick="openModal('${t.id}')">수정</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteTask('${t.id}')">삭제</button>
+            </td>
+        </tr>`;
+    }).join('');
+
+    wrap.innerHTML = `
+    <div class="section-title" style="margin-bottom:8px">
+        <span class="section-bar" style="background:#f59e0b"></span>
+        📌 매일 확인할 업무
+        <small style="font-size:11px;color:#9ca3af;font-weight:400">(고정된 업무 · ${pinned.length}건)</small>
+    </div>
+    <div class="pinned-section">
+        <div class="pinned-cards">${pinned.map(pinnedCardHTML).join('')}</div>
+        <div class="pinned-tw">
+            <table>
+                <thead><tr>
+                    <th style="width:52px">실행</th>
+                    <th style="width:90px">일자</th>
+                    <th style="width:105px">기한</th>
+                    <th style="width:110px">구분</th>
+                    <th>해야할 일</th>
+                    <th style="width:80px">담당자</th>
+                    <th style="width:80px">우선순위</th>
+                    <th style="width:75px">상태</th>
+                    <th style="width:90px">장소</th>
+                    <th style="width:160px">세부내용</th>
+                    <th style="width:120px">비고</th>
+                    <th style="width:90px">관리</th>
+                </tr></thead>
+                <tbody>${tableRows}</tbody>
+            </table>
         </div>
     </div>`;
 }
@@ -916,6 +1062,7 @@ function renderTodaySection() {
 function renderTable() {
     renderSummary();
     renderTodaySection();
+    renderPinnedSection();
     // DOM이 갱신된 뒤 높이를 계산해야 today-section 유무가 반영된다
     requestAnimationFrame(updateTableHeight);
 
@@ -963,6 +1110,7 @@ function renderTable() {
             <td><span class="truncate" title="${esc(t.detail)}">${esc(t.detail)||'-'}</span></td>
             <td><span class="truncate" title="${esc(t.note)}">${esc(t.note)||'-'}</span></td>
             <td style="white-space:nowrap">
+                <button class="btn-pin ${pinnedIds.has(t.id)?'pinned':''}" onclick="togglePin('${t.id}')" title="${pinnedIds.has(t.id)?'고정 해제':'공지사항에 고정'}">📌</button>
                 <button class="btn btn-secondary btn-sm" onclick="openModal('${t.id}')">수정</button>
                 <button class="btn btn-danger btn-sm" onclick="deleteTask('${t.id}')">삭제</button>
             </td>
